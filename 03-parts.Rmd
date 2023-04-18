@@ -1,0 +1,717 @@
+# Parts
+
+You can add parts to organize one or more book chapters together. Parts can be inserted at the top of an .Rmd file, before the first-level chapter heading in that same file. 
+
+Add a numbered part: `# (PART) Act one {-}` (followed by `# A chapter`)
+
+Add an unnumbered part: `# (PART\*) Act one {-}` (followed by `# A chapter`)
+
+Add an appendix as a special kind of un-numbered part: `# (APPENDIX) Other stuff {-}` (followed by `# A chapter`). Chapters in an appendix are prepended with letters instead of numbers.
+
+
+
+```{r}
+library(psych)
+library(matrixcalc)
+# library(matlib)
+library(pracma)
+library(zoo)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+```
+```{r}
+kwo0 <- vroom::vroom(
+  "data/feds200533.csv",
+  delim = "\n"
+)
+kwo0
+```
+
+```{r}
+kwo <- kwo0[9:nrow(kwo0),]
+colnames(kwo) <- kwo0[8,]
+```
+
+```{r}
+kwo1 <- kwo0[8:nrow(kwo0),]
+# colnames(kwo1) <- NULL
+
+```
+
+```{r}
+kwo1
+```
+
+
+```{r}
+kwo1 %>% 
+  # stringr::str_c("\n") %>% 
+  glue::glue("\n")  %>% 
+  vroom::vroom_write_lines("kwo.csv", ",")
+  
+  # vroom::vroom(.)
+```
+
+
+```{r}
+dim(kwo1)
+```
+
+```{r}
+kwo1[[1]] %>% 
+  # glue::glue("\n")
+  paste0("\n")
+```
+
+
+```{r}
+kwo[[1]] %>% paste0(.,"\n") %>% vroom::vroom()
+```
+
+
+```{r}
+kwo1[[1]] %>% 
+  paste0(., "\n") %>% 
+  vroom::vroom(., delim=",") %>% 
+  janitor::clean_names()
+```
+
+
+```{r}
+nber <- vroom::vroom(
+  "data/recession-nber.csv",
+  col_types = list(
+    date = "date",
+    nber = "i"
+))
+# nber
+
+gdpjh <- vroom::vroom(
+  "data/recession-gdp.csv",
+  col_types = c(
+    date = "date",
+    gdp_jh = "i"
+  )
+)
+
+recsn <- inner_join(nber, gdpjh, by = "date") %>% 
+  tidyr::pivot_longer(
+    cols = c(nber, gdp_jh),
+    names_to = "src",
+    values_to = "recession",
+  )
+  # mutate(recession = as.factor(recession))
+# recsn
+
+
+file = read.csv("data/gsw_ns_params.csv", header=TRUE) %>% 
+  na.omit() %>% 
+  filter(Date >= "1969-01-01") 
+
+attach(file)
+
+
+n_maturities = 120
+set.seed(123)
+```
+
+
+```{r}
+file <- Quandl::Quandl("FED/PARAMS") %>% 
+  as_tibble(.) %>% 
+  filter(Date >= "1969-01-01") 
+  # tidyr::
+  # filter(across(everything(), ~ is.na(.x)))
+  # filter(if_all(!Date, ~ is.na(.x)))
+
+attach(file)
+
+
+n_maturities = 120
+set.seed(123)
+```
+
+
+
+
+```{r}
+file %>% 
+  janitor::clean_names() %>% 
+  # filter(date >= "1972-01-01") 
+  filter(tau2 < 0) %>% 
+  tail
+```
+
+```{r}
+nss_yield <- function(n_years, beta0, beta1, beta2, beta3, tau1, tau2) {
+  beta0 + 
+    beta1 * (1 - exp(-n_years / tau1)) / (n_years / tau1)  + 
+    beta2 * ( ( (1 - exp(-n_years / tau1)) / (n_years / tau1) ) - exp(-n_years / tau1) ) +
+    beta3 * ( ( (1 - exp(-n_years / tau2)) / (n_years / tau2) ) - exp(-n_years / tau2) ) 
+}
+```
+
+
+
+
+```{r}
+set.seed(123)
+# file2 = read.csv("data/gsw_ns_params_og_cmp.csv", header=TRUE)
+# file2 = na.omit(file2)
+
+
+
+
+yield = matrix(rep(0,nrow(file)*n_maturities),nrow(file),n_maturities)
+
+for(n in 1:n_maturities)
+{
+  k =n/12
+  yield[,n]= BETA0 +BETA1*(1-exp(-k/TAU1))/(k/TAU1)+ BETA2*((1 -exp(-k/TAU1))/(k/TAU1) - exp(-k/TAU1))+ BETA3*((1-exp(-k/TAU2))/(k/TAU2)-exp(-k/TAU2))
+
+}
+yield = yield/100
+yield_raw=as.data.frame(yield)
+
+# yield_raw
+```
+
+
+```{r}
+tidyr::expand_grid(term=1:120, nss)
+```
+
+
+```{r}
+yield_long <- file %>% 
+  janitor::clean_names() %>% 
+  mutate(ym_ = lubridate::make_date(year = lubridate::year(date), month = lubridate::month(date))) %>%
+  group_by(ym_) %>%
+  filter(date == max(date)) %>% 
+  ungroup() %>% 
+  select(-ym_) %>% 
+  tidyr::expand_grid(., term=1:n_maturities) %>% 
+  mutate(n_years = term/12) %>% 
+  mutate(yield =  ( beta0 + 
+    beta1 * (1 - exp(-n_years / tau1)) / (n_years / tau1)  + 
+    beta2 * ( ( (1 - exp(-n_years / tau1)) / (n_years / tau1) ) - exp(-n_years / tau1) ) +
+    beta3 * ( ( (1 - exp(-n_years / tau2)) / (n_years / tau2) ) - exp(-n_years / tau2) ) )  / 100 )
+yield_long
+```
+
+
+```{r}
+yield_m0 <- 
+  yield_long %>% 
+  select(date, term, yield) %>% 
+  tidyr::pivot_wider(
+    names_from = term,
+    values_from = yield,
+    names_prefix = "m_"
+  ) 
+yield_m0
+```
+
+
+
+
+```{r}
+# yield_m0 <- yield_raw %>% 
+#   as_tibble(.) %>% 
+#   mutate(Date = lubridate::ymd(file$Date)) %>% 
+#   select(Date, starts_with("V")) %>% 
+#   mutate(ym_ = lubridate::make_date(year = lubridate::year(Date), month = lubridate::month(Date))) %>%
+#   group_by(ym_) %>%
+#   filter(Date == max(Date)) %>% 
+#   ungroup() %>% 
+#   select(-ym_)
+  
+
+yield_m <- yield_m0 %>% 
+  select(-date) %>% 
+  as.matrix(.)
+dim(yield_m)
+```
+
+
+
+
+```{r}
+#Use 5 factors
+# K=5
+
+# Use excess returns at these maturities to estimate the model.
+rx_maturities = c(6,18,24,36,48,60,84,120)
+ttm = c(1:n_maturities)*(1/12)
+logPrices = matrix(rep(0,nrow(yield_m)*n_maturities),nrow(yield_m),n_maturities)
+for(i in 1 :n_maturities)
+{
+  logPrices[,i] = -1*yield_m[,i]*ttm[i]
+}
+rf =  -1*logPrices[(1:nrow(logPrices)-1),1]
+rx =  logPrices[2:nrow(logPrices), 1:(ncol(logPrices)-1)] - logPrices[1:(nrow(logPrices)-1), 2:(ncol(logPrices))] -rf
+
+# Principal component
+K=5
+yield =yield_m[,1:n_maturities]
+demeanedyield = matrix(rep(0,nrow(yield)*ncol(yield)),nrow(yield),ncol(yield))
+for(i in 1:ncol(yield))
+{
+  demeanedyield[,i]= yield[,i]-mean(yield[,i])
+}
+k = prcomp((demeanedyield))
+yieldPCs = demeanedyield %*% (k$rotation)
+x = t(yieldPCs[1:nrow(yieldPCs),1:K])
+
+x_lhs=  x[,(2:ncol(x))]
+x_rhs =  x[,(1:(ncol(x)-1))]
+var_coeffs = x_lhs %*% t(x_rhs)%*%solve(x_rhs%*%t(x_rhs))
+phi = var_coeffs[,1:ncol(var_coeffs)]
+v = x_lhs - var_coeffs %*% x_rhs
+Sigma =  v %*% t(v)/ncol(v)
+
+# Step 2
+selected_rx = t(rx[,(rx_maturities-1)])
+N = nrow(selected_rx)
+Z = rbind((rep(1,(nrow(yield)-1))),v,x[,1:(ncol(x)-1)])
+abc = selected_rx %*% t(Z)%*%solve(Z%*%t(Z))
+E = selected_rx - abc %*% Z
+
+sigmasq_ret = tr(E %*% t(E)) / (ncol(E)*nrow(E))
+h =  x[, 1:(ncol(x)-1)]
+a = abc[,1]
+beta = t(abc[, 1:K+1])
+c = abc[, (K+2): ncol(abc)]
+l = K*K
+# Step(3)
+Bstar = t(matrix(rep(0,N*l),N,l))
+for(i in 1:ncol(Bstar))
+{
+  Bstar[,i]= vec(beta[,i]%*%t(beta[,i]))
+}
+
+lambda0 = solve(beta%*%t(beta))%*%beta%*%(a +0.5*(t(Bstar) %*% vec(Sigma) + sigmasq_ret * rep(1,N)))
+lambda1  = solve(beta%*%t(beta))%*% beta%*%c
+
+# Run Bond Pricing recursion
+A = rep(0,n_maturities)
+B = matrix(rep(0,n_maturities),K,n_maturities)
+mat =rbind(rep(1,ncol(v)),x[,2:(ncol(x))])
+delta = t(rf)%*%t(mat) %*% solve(mat%*%t(mat))
+delta0 = delta[1]
+delta1 = delta[,2:ncol(delta)]
+A[1]=   0.5*(sigmasq_ret)-delta0
+B[,1] = -t(delta1)
+for(i in 2:(n_maturities))
+{
+  A[i] = A[i-1]+ t(B[,i-1])%*%(-lambda0) +0.5*(t(B[,i-1])%*% Sigma %*% B[,i-1]+ sigmasq_ret)-delta0
+  B[,i] = t(B[,i-1])%*%(phi-lambda1)-t(delta1)
+}
+
+# Construct fitted yields
+fittedLogPrices = t(t(B)%*%x)
+fittedYields = t(t(B)%*%x)
+for(i in 1: n_maturities)
+  fittedLogPrices[,i] = fittedLogPrices[,i] +A[i]
+for(i in 1: n_maturities)
+  fittedYields[,i] =  t((fittedLogPrices[,i]/ttm[i])*(-1))
+
+#Construct risk free yields
+A = rep(0,(n_maturities))
+B = matrix(rep(0,(n_maturities)),K,(n_maturities))
+A[1]= 0.5*(sigmasq_ret)-delta0
+B[,1] = -t(delta1)
+
+for(i in 2:(n_maturities))
+{
+  A[i] = A[i-1]+0.5*(t(B[,i-1])%*% Sigma %*% B[,i-1]+ sigmasq_ret)-delta0
+  B[,i] = t(B[,i-1])%*%(phi)-t(delta1)
+}
+
+# Construct risk free yields
+RiskfreeLogPrices = t(t(B)%*%x)
+RiskfreeYields = t(t(B)%*%x)
+for(i in 1: n_maturities)
+  RiskfreeLogPrices[,i] = RiskfreeLogPrices[,i] +A[i]
+for(i in 1: n_maturities)
+  RiskfreeYields[,i] =  t((RiskfreeLogPrices[,i]/ttm[i])*(-1))
+
+termpremium = fittedYields - RiskfreeYields
+
+```
+
+
+
+```{r}
+colnames(yield_m) <- paste(rep("m", n_maturities), 1:n_maturities, sep = "_")
+colnames(termpremium) <- paste(rep("m", n_maturities), 1:n_maturities, sep = "_")
+```
+
+
+
+```{r}
+  termpremium %>% 
+  as_tibble(.)  %>% 
+  mutate(Date = yield_m0$date) %>% 
+  tidyr::pivot_longer(
+    cols = -Date,
+    names_to = "term",
+    values_to = "premium",
+    names_prefix = "m_"
+  )
+```
+```{r}
+yield_m0 %>% 
+  as_tibble(.)  %>%
+  mutate(Date = yield_m0$date) %>%
+  select(-date) %>% 
+  # tidyr::pivot_longer(
+  #   cols = -Date,
+  #   names_to = "term",
+  #   values_to = "yield",
+  #   names_prefix = "m_"
+  # )
+```
+
+
+
+```{r}
+yp <- inner_join(
+  yield_m0 %>% 
+  # as_tibble(.)  %>% 
+  mutate(Date = yield_m0$date) %>% 
+  select(-date) %>% 
+  tidyr::pivot_longer(
+    cols = -Date,
+    names_to = "term",
+    values_to = "yield",
+    names_prefix = "m_"
+  ), 
+  termpremium %>% 
+  as_tibble(.)  %>% 
+  mutate(Date = yield_m0$date) %>% 
+  tidyr::pivot_longer(
+    cols = -Date,
+    names_to = "term",
+    values_to = "premium",
+    names_prefix = "m_"
+  ),
+  by = c("Date", "term")
+) %>% 
+  mutate(
+    date = lubridate::floor_date(lubridate::ymd(Date), "month"),
+    term = as.integer(term)) %>% 
+  select(date, term, yield, premium)
+yp 
+```
+
+
+
+```{r}
+df <- left_join(
+  yp, recsn,
+  by = "date"
+) %>% 
+  group_by(src) %>% 
+  # mutate(recession = tidyr::fill(recession))
+  tidyr::fill(recession) %>% 
+  ungroup() %>% 
+  filter(date == "1969-02-01")
+  # filter(date >= "1990-01-01") %>% 
+  # mutate(y = lubridate::year(date), m= stringr::str_pad(lubridate::month(date),2,pad="0")) %>% 
+  # mutate(date = stringr::str_c(y,m,sep="-")) %>% 
+  # mutate(date = as.factor(date)) %>%
+  # mutate(recession = as.factor(if_else(recession == 1, "recession", "fine"))) %>%
+  # select(date, term, yield, premium, src, recession)
+df
+```
+
+```{r}
+df_nber <- df %>% filter(src == "nber")
+df_gdpjh <- df %>% filter(src == "gdp_jh")
+```
+
+```{r}
+df %>% summarise(max(premium), min(premium))
+```
+
+
+
+
+```{r}
+fig_p_nber <- 
+  df_nber %>% 
+  plot_ly(
+    x = ~term,
+    y = ~premium,
+    frame = ~date,
+    color = ~recession,
+    type = "scatter",
+    mode = "markers",
+    hoverinfo = "text"
+  ) %>% 
+  layout(yaxis = list(title="premium",range=c(-.02, .05)), xaxis = list(title="term (months)"))
+
+
+fig_p_gdpjh <- 
+  df_gdpjh %>% 
+  plot_ly(
+    x = ~term,
+    y = ~premium,
+    frame = ~date,
+    color = ~recession,
+    type = "scatter",
+    mode = "markers",
+    hoverinfo = "text"
+  ) %>% 
+  layout(yaxis = list(title="premium", range=c(-.02, .05)), xaxis = list(title="term (months)"))
+
+
+
+fig <- subplot(
+  fig_p_nber, fig_p_gdpjh, 
+  nrows = 2,
+  titleY = TRUE,
+  titleX = TRUE,
+  shareX = TRUE,
+  margin = 0.1
+  ) %>% 
+  layout(
+    title = "Treasuries and Recession Relationship",
+    # yaxis = list(range=c(-.02, .05)),
+    legend =list(title=list(text="<b> Recession? </b>")),
+    annotations = list( 
+
+  list( 
+
+    x = 0.2,  
+
+    y = 1.0,  
+
+    text = "NBER",  
+
+    xref = "paper",  
+
+    yref = "paper",  
+
+    xanchor = "center",  
+
+    yanchor = "bottom",  
+
+    showarrow = FALSE 
+
+  ),  
+
+
+  list( 
+
+    x = 0.2,  
+
+    y = 0.4,  
+
+    text = "GDP",  
+
+    xref = "paper",  
+
+    yref = "paper",  
+
+    xanchor = "center",  
+
+    yanchor = "bottom",  
+
+    showarrow = FALSE 
+
+  ))
+    )
+  
+fig
+```
+
+
+
+```{r}
+# fig_p_nber <- 
+#   df_nber %>% 
+#   plot_ly(
+#     x = ~term,
+#     y = ~premium,
+#     frame = ~date,
+#     color = ~recession,
+#     type = "scatter",
+#     mode = "markers",
+#     hoverinfo = "text"
+#   ) %>% 
+#   layout(yaxis = list(title="premium"), xaxis = list(title="term (months)"))
+# 
+# fig_y_nber <- 
+#   df_nber %>% 
+#   plot_ly(
+#     x = ~term,
+#     y = ~yield,
+#     frame = ~date,
+#     color = ~recession,
+#     type = "scatter",
+#     mode = "markers",
+#     hoverinfo = "text"
+#   ) %>% 
+#   layout(yaxis = list(title="yield"), xaxis = list(title="term (months)")) 
+# 
+# fig_p_gdpjh <- 
+#   df_gdpjh %>% 
+#   plot_ly(
+#     x = ~term,
+#     y = ~premium,
+#     frame = ~date,
+#     color = ~recession,
+#     type = "scatter",
+#     mode = "markers",
+#     hoverinfo = "text"
+#   ) %>% 
+#   layout(yaxis = list(title="premium"), xaxis = list(title="term (months)"))
+# 
+# fig_y_gdpjh <- 
+#   df_gdpjh %>% 
+#   plot_ly(
+#     x = ~term,
+#     y = ~yield,
+#     frame = ~date,
+#     color = ~recession,
+#     type = "scatter",
+#     mode = "markers",
+#     hoverinfo = "text"
+#   ) %>% 
+#   layout(yaxis = list(title="yield"), xaxis = list(title="term (months)"))
+# 
+# fig <- subplot(
+#   fig_p_nber, fig_y_nber, fig_p_gdpjh, fig_y_gdpjh, 
+#   nrows = 2,
+#   titleY = TRUE,
+#   titleX = TRUE,
+#   # shareX = TRUE,
+#   margin = 0.1
+#   ) %>% 
+#   layout(
+#     title = "Treasuries and Recession Relationship",
+#     legend =list(title=list(text="<b> Recession? </b>")),
+#     annotations = list( 
+# 
+#   list( 
+# 
+#     x = 0.2,  
+# 
+#     y = 1.0,  
+# 
+#     text = "NBER",  
+# 
+#     xref = "paper",  
+# 
+#     yref = "paper",  
+# 
+#     xanchor = "center",  
+# 
+#     yanchor = "bottom",  
+# 
+#     showarrow = FALSE 
+# 
+#   ),  
+# 
+#   list( 
+# 
+#     x = 0.8,  
+# 
+#     y = 1,  
+# 
+#     text = "NBER",  
+# 
+#     xref = "paper",  
+# 
+#     yref = "paper",  
+# 
+#     xanchor = "center",  
+# 
+#     yanchor = "bottom",  
+# 
+#     showarrow = FALSE 
+# 
+#   ),  
+# 
+#   list( 
+# 
+#     x = 0.2,  
+# 
+#     y = 0.4,  
+# 
+#     text = "GDP",  
+# 
+#     xref = "paper",  
+# 
+#     yref = "paper",  
+# 
+#     xanchor = "center",  
+# 
+#     yanchor = "bottom",  
+# 
+#     showarrow = FALSE 
+# 
+#   ),
+# 
+#   list( 
+# 
+#     x = 0.8,  
+# 
+#     y = 0.4,  
+# 
+#     text = "GDP",  
+# 
+#     xref = "paper",  
+# 
+#     yref = "paper",  
+# 
+#     xanchor = "center",  
+# 
+#     yanchor = "bottom",  
+# 
+#     showarrow = FALSE 
+# 
+#   ))
+#     )
+#   
+# fig
+```
+
+
+```{r}
+yp %>% 
+  filter(date == max(date)) %>% 
+  ggplot(aes(term, premium)) +
+  geom_line() +
+  labs(title = "March")
+```
+
+
+
+
+
+```{r}
+# termpremium %>%
+  # as_tibble(.) 
+  # tidyr::pivot_longer(
+  #   cols = -dt,
+  #   names_to = "term",
+  #   values_to = "premium",
+  #   names_prefix = "V"
+  # ) %>%
+  # mutate(term = as.integer(term)) %>%
+  # filter(dt == "2023-03-17") %>%
+  # # filter(premium > 0)
+  # ggplot(aes(term, premium)) +
+  # geom_line()
+```
+
+
+
+
+
+
