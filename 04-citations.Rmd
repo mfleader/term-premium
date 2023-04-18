@@ -13,3 +13,44 @@ Note that the `.bib` files need to be listed in the index.Rmd with the YAML `bib
 
 
 The RStudio Visual Markdown Editor can also make it easier to insert citations: <https://rstudio.github.io/visual-markdown-editing/#/citations>
+
+
+```{r}
+# kwo0 <- vroom::vroom(
+#   "data/feds200533.csv",
+#   delim = "\n"
+# )
+# kwo0
+```
+
+```{r}
+# kwo <- kwo0[9:nrow(kwo0),]
+# colnames(kwo) <- kwo0[8,]
+```
+
+```{r}
+# kwo1 <- kwo0[8:nrow(kwo0),]
+# colnames(kwo1) <- NULL
+
+```
+
+
+```{r}
+
+# kwo1[[1]] %>% 
+  # glue::glue("\n")
+  # paste0("\n")
+```
+
+
+```{r}
+# kwo[[1]] %>% paste0(.,"\n") %>% vroom::vroom()
+```
+
+
+```{r}
+# kwo1[[1]] %>% 
+#   paste0(., "\n") %>% 
+#   vroom::vroom(., delim=",") %>% 
+#   janitor::clean_names()
+```
